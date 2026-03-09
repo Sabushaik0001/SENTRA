@@ -13,6 +13,7 @@ import base64
 import io
 import json
 import logging
+import os
 import tempfile
 import uuid
 from typing import Any, Dict, List
@@ -293,7 +294,9 @@ POPPLER_PATH = r"C:\poppler\poppler-24.08.0\Library\bin"
 
 def convert_pdf_to_images(pdf_bytes: bytes, dpi: int = 300) -> List[bytes]:
     """Convert a PDF to a list of PNG image byte arrays, one per page."""
-    images = convert_from_bytes(pdf_bytes, dpi=dpi, fmt="png", poppler_path=POPPLER_PATH)
+    import shutil
+    poppler = POPPLER_PATH if shutil.which("pdfinfo") is None and os.path.isdir(POPPLER_PATH) else None
+    images = convert_from_bytes(pdf_bytes, dpi=dpi, fmt="png", poppler_path=poppler)
     image_bytes_list = []
     for img in images:
         buf = io.BytesIO()
@@ -348,9 +351,35 @@ def _extract_page_with_vision(
 
     try:
         return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.error("Failed to parse JSON from page %d: %s\nRaw: %s", page_number, exc, raw[:500])
-        return {"page_number": page_number, "error": str(exc)}
+    except json.JSONDecodeError:
+        # Claude sometimes returns multiple JSON objects concatenated.
+        # Try to parse them individually and merge.
+        try:
+            decoder = json.JSONDecoder()
+            objects = []
+            idx = 0
+            while idx < len(raw):
+                raw_trimmed = raw[idx:].lstrip()
+                if not raw_trimmed:
+                    break
+                obj, end = decoder.raw_decode(raw_trimmed)
+                objects.append(obj)
+                idx += len(raw) - len(raw_trimmed) + end
+            if objects:
+                # Merge: keep first object as base, combine rows/sections
+                merged = objects[0]
+                for extra in objects[1:]:
+                    for key in ("rows", "sections", "change_orders"):
+                        if key in extra:
+                            merged.setdefault(key, []).extend(extra[key])
+                    if "keys" in extra and "keys" in merged:
+                        merged["keys"].update(extra["keys"])
+                logger.info("Merged %d JSON objects from page %d", len(objects), page_number)
+                return merged
+        except (json.JSONDecodeError, ValueError):
+            pass
+        logger.error("Failed to parse JSON from page %d.\nRaw: %s", page_number, raw[:500])
+        return {"page_number": page_number, "error": "JSON parse failed"}
 
 
 # ── Selection Sheet Extraction ───────────────────────────────────────────────
@@ -518,12 +547,27 @@ def _save_extracted_json(
     page_results: List[Dict[str, Any]],
     page_count: int,
 ):
-    """Save raw extraction JSON to documents table and update status."""
+    """Save raw extraction JSON to documents table, upload to S3, and update status."""
+    from app.services.s3_service import upload_file_to_s3
+
     doc = db.query(Document).filter(Document.id == document_id).first()
     if doc:
         doc.extracted_json = page_results
         doc.page_count = page_count
         doc.status = "extracted"
+
+        # Upload extracted JSON to S3 alongside the source PDF
+        if doc.s3_path:
+            # Derive JSON filename from document_type (e.g. selection_sheet → selection_sheet.json)
+            json_filename = f"{doc.document_type}.json" if doc.document_type else "extracted.json"
+            # Get the S3 folder from existing path: strip bucket prefix and filename
+            s3_key = "/".join(doc.s3_path.split("/")[3:])  # remove s3://bucket/
+            s3_folder = s3_key.rsplit("/", 1)[0]  # remove filename
+            json_s3_key = f"{s3_folder}/{json_filename}"
+
+            json_bytes = json.dumps(page_results, indent=2, ensure_ascii=False).encode("utf-8")
+            json_s3_path = upload_file_to_s3(json_bytes, json_s3_key, content_type="application/json")
+            logger.info("Uploaded extracted JSON to %s", json_s3_path)
 
 
 def _update_doc_status(db: Session, document_id: uuid.UUID, status: str):

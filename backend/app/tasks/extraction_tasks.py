@@ -20,6 +20,22 @@ def _s3_key_from_path(s3_path: str) -> str:
     return "/".join(s3_path.split("/")[3:])
 
 
+def _classify_from_filename(db, doc):
+    """Classify document based on filename and document_type (already known at upload)."""
+    from app.models.documents import DocumentClassification
+    classification = DocumentClassification(
+        document_id=doc.id,
+        document_type=doc.document_type,
+        builder_id=doc.builder_id,
+        format="standard",
+        confidence_score=1.0,
+    )
+    db.add(classification)
+    doc.status = "classified"
+    db.commit()
+    logger.info("Classified %s as %s (from upload metadata)", doc.id, doc.document_type)
+
+
 def run_extraction(job_id: str, lot_id: str, selection_doc_id: str, takeoff_doc_id: str):
     """Classify and extract both documents."""
     db = SessionLocal()
@@ -30,8 +46,8 @@ def run_extraction(job_id: str, lot_id: str, selection_doc_id: str, takeoff_doc_
             logger.info("[%s] Processing selection sheet %s", job_id, selection_doc_id)
             sel_bytes = download_file_from_s3(_s3_key_from_path(sel_doc.s3_path))
 
-            # Classify using text preview
-            classify_document(db, sel_doc.id, sel_bytes.decode("utf-8", errors="replace")[:3000])
+            # Classify using upload metadata (document_type is already known)
+            _classify_from_filename(db, sel_doc)
 
             # Extract using Vision (sends raw PDF bytes to Claude)
             extract_selection_sheet_from_bytes(
@@ -44,7 +60,7 @@ def run_extraction(job_id: str, lot_id: str, selection_doc_id: str, takeoff_doc_
             logger.info("[%s] Processing takeoff sheet %s", job_id, takeoff_doc_id)
             to_bytes = download_file_from_s3(_s3_key_from_path(to_doc.s3_path))
 
-            classify_document(db, to_doc.id, to_bytes.decode("utf-8", errors="replace")[:3000])
+            _classify_from_filename(db, to_doc)
 
             extract_takeoff_sheet_from_bytes(
                 db, to_doc.id, to_bytes, to_doc.file_name or "takeoff.pdf", lot_id
