@@ -1,0 +1,38 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+python-multipart==0.0.18
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Database
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.1
+
+# Task queue
+celery==5.4.0
+redis==5.2.1
+
+# AWS
+boto3==1.35.86
+
+# AI / LLM
+litellm==1.55.8
+
+# PDF to image conversion
+pdf2image==1.17.0
+Pillow==11.1.0
+
+# Vector store
+pinecone==5.4.2
+
+# S3 file handling
+python-multipart==0.0.18
+
+# Excel parsing
+openpyxl==3.1.5
+pandas==2.2.3
+
+# Logging
+python-json-logger==3.2.1
