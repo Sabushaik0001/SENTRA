@@ -8,7 +8,7 @@ Base URL: `http://localhost:8000`
 
 ### `GET /health`
 Returns API health status.
-
+.
 **Response:**
 ```json
 {
