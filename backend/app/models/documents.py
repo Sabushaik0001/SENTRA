@@ -19,7 +19,7 @@ class Document(Base):
     document_type = Column(String(50))
     file_name = Column(Text)
     s3_path = Column(Text)
-    status = Column(String(50), default="uploaded")
+    status = Column(String(50), default="uploaded") # Valid statuses: uploaded, classified, extracted, failed
     extracted_json = Column(JSONB, nullable=True)
     page_count = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

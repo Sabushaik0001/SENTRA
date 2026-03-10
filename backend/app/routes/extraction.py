@@ -53,7 +53,8 @@ def run_extraction_for_lot(lot_id: str, db: Session = Depends(get_db)):
 
         if doc.document_type == "selection_sheet":
             selections = extract_selection_sheet_from_bytes(
-                db, doc.id, file_bytes, file_name, lot_id
+                db, doc.id, file_bytes, file_name, lot_id,
+                builder_id=doc.builder_id
             )
             results["selection_sheet"] = {
                 "document_id": str(doc.id),
@@ -63,7 +64,8 @@ def run_extraction_for_lot(lot_id: str, db: Session = Depends(get_db)):
 
         elif doc.document_type == "takeoff_sheet":
             takeoff_rows = extract_takeoff_sheet_from_bytes(
-                db, doc.id, file_bytes, file_name, lot_id
+                db, doc.id, file_bytes, file_name, lot_id,
+                builder_id=doc.builder_id
             )
             results["takeoff_sheet"] = {
                 "document_id": str(doc.id),

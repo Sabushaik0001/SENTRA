@@ -10,6 +10,7 @@ from app.models.audit import AuditEvent
 from app.tasks.celery_worker import celery_app
 from app.tasks.extraction_tasks import run_extraction
 from app.tasks.mapping_tasks import run_mapping_and_order
+from app.utils.audit_helper import log_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,23 @@ def process_document_pipeline(
 
     except Exception as exc:
         logger.exception("[%s] Pipeline failed for lot %s: %s", job_id, lot_id, exc)
+
+        duration_ms = int((time.perf_counter() - start) * 1000)
+
+        log_audit_event(
+            db=db,
+            job_id=uuid.UUID(job_id),
+            event_type="pipeline_failed",
+            duration_ms=duration_ms,
+            metadata={
+                "lot_id": lot_id,
+                "builder_id": builder_id,
+                "error": str(exc),
+                "retry_count": self.request.retries,
+                "max_retries": self.max_retries,
+            }
+        )
+        
         db.rollback()
         raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
     finally:

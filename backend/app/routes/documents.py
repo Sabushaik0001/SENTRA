@@ -14,6 +14,7 @@ from app.schemas.document_schema import DocumentStatusResponse, DocumentUploadRe
 from app.services.s3_service import upload_file_to_s3
 from app.tasks.document_tasks import process_document_pipeline
 from app.utils.s3_paths import build_s3_key
+from app.utils.audit_helper import log_audit_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -64,6 +65,21 @@ async def upload_documents(
     db.commit()
     db.refresh(sel_doc)
     db.refresh(to_doc)
+
+    log_audit_event(
+        db=db,
+        job_id=job_id,
+        event_type="documents_uploaded",
+        user_id=None,  # Need to add user authentication
+        metadata={
+            "lot_id": lot_id,
+            "builder_id": builder_id,
+            "selection_sheet_id": str(sel_doc.id),
+            "takeoff_sheet_id": str(to_doc.id),
+            "selection_sheet_filename": selection_sheet.filename,
+            "takeoff_sheet_filename": takeoff_sheet.filename,
+        }
+    )
 
     # Dispatch Celery pipeline
     process_document_pipeline.delay(

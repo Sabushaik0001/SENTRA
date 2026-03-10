@@ -29,6 +29,43 @@ from app.models.takeoff import TakeoffData
 
 logger = logging.getLogger(__name__)
 
+def _get_prompt_from_db(db: Session, builder_id: str, document_type: str) -> str:
+    """
+    Load active prompt template from database for given builder and document type.
+    Falls back to hardcoded prompts if not found.
+    """
+    from app.models.documents import PromptTemplate
+    
+    if not builder_id:
+        logger.warning("No builder_id provided, using hardcoded prompt for %s", document_type)
+        if document_type == "selection_sheet":
+            return SELECTION_SHEET_PROMPT
+        elif document_type == "takeoff_sheet":
+            return TAKEOFF_SHEET_PROMPT
+        else:
+            raise ValueError(f"Unknown document type: {document_type}")
+    
+    template = db.query(PromptTemplate).filter(
+        PromptTemplate.builder_id == builder_id,
+        PromptTemplate.document_type == document_type,
+        PromptTemplate.is_active == True
+    ).order_by(PromptTemplate.version.desc()).first()
+    
+    if template:
+        logger.info("Using database prompt (builder=%s, type=%s, version=%d)", 
+                   builder_id, document_type, template.version)
+        return template.prompt_text
+    
+    # Fallback to hardcoded
+    logger.warning("No database prompt found for %s/%s, using hardcoded fallback", 
+                  builder_id, document_type)
+    if document_type == "selection_sheet":
+        return SELECTION_SHEET_PROMPT
+    elif document_type == "takeoff_sheet":
+        return TAKEOFF_SHEET_PROMPT
+    else:
+        raise ValueError(f"Unknown document type: {document_type}")
+
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
 SELECTION_SHEET_PROMPT = """You are an expert document data extraction system.
@@ -390,6 +427,7 @@ def extract_selection_sheet_from_bytes(
     file_bytes: bytes,
     file_name: str,
     lot_id: str,
+    builder_id: str,
 ) -> List[Selection]:
     """
     Full pipeline: PDF bytes → page images → Claude Vision → selections table.
@@ -399,12 +437,13 @@ def extract_selection_sheet_from_bytes(
 
     # Step 1: Convert PDF to page images
     page_images = convert_pdf_to_images(file_bytes)
+    prompt = _get_prompt_from_db(db, builder_id, "selection_sheet")
 
     # Step 2: Extract each page with Claude Vision
     all_page_results = []
     for idx, img_bytes in enumerate(page_images, start=1):
         logger.info("Extracting page %d/%d for lot %s", idx, len(page_images), lot_id)
-        page_data = _extract_page_with_vision(img_bytes, idx, SELECTION_SHEET_PROMPT)
+        page_data = _extract_page_with_vision(img_bytes, idx, prompt)
         all_page_results.append(page_data)
 
     # Step 3: Populate selections table from all pages
@@ -464,6 +503,7 @@ def extract_takeoff_sheet_from_bytes(
     file_bytes: bytes,
     file_name: str,
     lot_id: str,
+    builder_id: str,
 ) -> List[TakeoffData]:
     """
     Full pipeline: PDF bytes → page images → Claude Vision → takeoff_data table.
@@ -473,12 +513,13 @@ def extract_takeoff_sheet_from_bytes(
 
     # Step 1: Convert PDF to page images
     page_images = convert_pdf_to_images(file_bytes)
+    prompt = _get_prompt_from_db(db, builder_id, "takeoff_sheet")
 
     # Step 2: Extract each page with Claude Vision
     all_page_results = []
     for idx, img_bytes in enumerate(page_images, start=1):
         logger.info("Extracting page %d/%d for lot %s", idx, len(page_images), lot_id)
-        page_data = _extract_page_with_vision(img_bytes, idx, TAKEOFF_SHEET_PROMPT)
+        page_data = _extract_page_with_vision(img_bytes, idx, prompt)
         all_page_results.append(page_data)
 
     # Step 3: Populate takeoff_data table from all pages
