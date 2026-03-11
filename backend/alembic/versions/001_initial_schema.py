@@ -17,6 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute('CREATE SCHEMA IF NOT EXISTS sentra')
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
 
     op.create_table(
@@ -30,18 +31,20 @@ def upgrade() -> None:
         sa.Column("status", sa.String(50), server_default="uploaded"),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
-    op.create_index("idx_documents_lot_id", "documents", ["lot_id"])
+    op.create_index("idx_documents_lot_id", "documents", ["lot_id"], schema="sentra")
 
     op.create_table(
         "document_classifications",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("document_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("documents.id", ondelete="CASCADE")),
+        sa.Column("document_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("sentra.documents.id", ondelete="CASCADE")),
         sa.Column("document_type", sa.String(50)),
         sa.Column("builder_id", sa.String(50)),
         sa.Column("format", sa.String(50)),
         sa.Column("confidence_score", sa.Float),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -55,6 +58,7 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(100)),
         sa.Column("performance_metrics", postgresql.JSONB),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -69,8 +73,9 @@ def upgrade() -> None:
         sa.Column("location_number", sa.String(50)),
         sa.Column("change_order_status", sa.Boolean),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
-    op.create_index("idx_selections_lot_id", "selections", ["lot_id"])
+    op.create_index("idx_selections_lot_id", "selections", ["lot_id"], schema="sentra")
 
     op.create_table(
         "takeoff_data",
@@ -93,8 +98,9 @@ def upgrade() -> None:
         sa.Column("t_molding_lf", sa.Float),
         sa.Column("notes", sa.Text),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
-    op.create_index("idx_takeoff_lot_id", "takeoff_data", ["lot_id"])
+    op.create_index("idx_takeoff_lot_id", "takeoff_data", ["lot_id"], schema="sentra")
 
     op.create_table(
         "takeoff_mapped",
@@ -105,6 +111,7 @@ def upgrade() -> None:
         sa.Column("material_type", sa.String(100)),
         sa.Column("quantity", sa.Float),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -116,6 +123,7 @@ def upgrade() -> None:
         sa.Column("with_material_type", sa.String(100)),
         sa.Column("builder_id", sa.String(50)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -127,8 +135,9 @@ def upgrade() -> None:
         sa.Column("trade_type", sa.String(100)),
         sa.Column("uom", sa.String(20)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
-    op.create_index("idx_sap_code", "sap_materials", ["sap_code"])
+    op.create_index("idx_sap_code", "sap_materials", ["sap_code"], schema="sentra")
 
     op.create_table(
         "confirmed_mappings",
@@ -138,8 +147,9 @@ def upgrade() -> None:
         sa.Column("confidence_score", sa.Float),
         sa.Column("approved_by", sa.String(100)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
-    op.create_index("idx_confirmed_material", "confirmed_mappings", ["material_name"])
+    op.create_index("idx_confirmed_material", "confirmed_mappings", ["material_name"], schema="sentra")
 
     op.create_table(
         "sundry_rules",
@@ -149,6 +159,7 @@ def upgrade() -> None:
         sa.Column("quantity_ratio", sa.Float),
         sa.Column("uom", sa.String(20)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -158,6 +169,7 @@ def upgrade() -> None:
         sa.Column("sap_labor_code", sa.String(50)),
         sa.Column("description", sa.Text),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -169,18 +181,20 @@ def upgrade() -> None:
         sa.Column("total_amount", sa.Float),
         sa.Column("created_by", sa.String(100)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
         "order_lines",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("uuid_generate_v4()")),
-        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("order_drafts.id", ondelete="CASCADE")),
+        sa.Column("order_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("sentra.order_drafts.id", ondelete="CASCADE")),
         sa.Column("sap_material_code", sa.String(50)),
         sa.Column("description", sa.Text),
         sa.Column("quantity", sa.Float),
         sa.Column("uom", sa.String(20)),
         sa.Column("category", sa.String(50)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -192,6 +206,7 @@ def upgrade() -> None:
         sa.Column("corrected_value", sa.Text),
         sa.Column("corrected_by", sa.String(100)),
         sa.Column("corrected_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -203,6 +218,7 @@ def upgrade() -> None:
         sa.Column("duration_ms", sa.Integer),
         sa.Column("metadata", postgresql.JSONB),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
     op.create_table(
@@ -214,6 +230,7 @@ def upgrade() -> None:
         sa.Column("selection_sheet_format", sa.String(50)),
         sa.Column("takeoff_sheet_format", sa.String(50)),
         sa.Column("created_at", sa.DateTime, server_default=sa.text("CURRENT_TIMESTAMP")),
+        schema="sentra",
     )
 
 
@@ -225,4 +242,5 @@ def downgrade() -> None:
         "takeoff_data", "selections", "prompt_templates",
         "document_classifications", "documents",
     ]:
-        op.drop_table(table)
+        op.drop_table(table, schema="sentra")
+    op.execute("DROP SCHEMA IF EXISTS sentra")

@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 # Load .env from project root (one level above backend/)
@@ -37,7 +37,7 @@ POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgres")
 POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
 
 DATABASE_URL: str = (
-    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+    f"postgresql://{POSTGRES_USER}:{quote_plus(POSTGRES_PASSWORD)}"
     f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 )
 

@@ -8,9 +8,10 @@ from pydantic import BaseModel
 
 
 class DocumentUploadResponse(BaseModel):
-    job_id: UUID
     lot_id: str
     status: str
+    selection_doc_id: UUID
+    takeoff_doc_id: UUID
     selection_sheet_s3: str
     takeoff_sheet_s3: str
     message: str

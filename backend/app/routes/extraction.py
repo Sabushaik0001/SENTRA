@@ -1,6 +1,7 @@
 """Extraction endpoints: trigger extraction and view results."""
 
 import logging
+import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,66 +13,47 @@ from app.models.selections import Selection
 from app.models.takeoff import TakeoffData
 from app.schemas.selection_schema import SelectionListResponse, SelectionOut
 from app.schemas.takeoff_schema import TakeoffDataOut, TakeoffListResponse
-from app.services.extraction_service import (
-    extract_selection_sheet_from_bytes,
-    extract_takeoff_sheet_from_bytes,
-)
-from app.services.s3_service import download_file_from_s3
+from app.tasks.document_tasks import extract_documents_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _s3_key_from_path(s3_path: str) -> str:
-    return "/".join(s3_path.split("/")[3:])
-
-
-@router.post("/{lot_id}/run")
+@router.post("/{lot_id}/run", status_code=202)
 def run_extraction_for_lot(lot_id: str, db: Session = Depends(get_db)):
     """
-    Trigger extraction for all documents in a lot.
-    Downloads files from S3, sends to Claude Vision, stores results in DB.
+    Dispatch Celery extraction task for a lot.
+    Documents must already be uploaded and classified.
+    Poll GET /documents/{lot_id}/status to track progress.
     """
     docs = db.query(Document).filter(Document.lot_id == lot_id).all()
     if not docs:
         raise HTTPException(status_code=404, detail=f"No documents found for lot {lot_id}")
 
-    results = {"lot_id": lot_id, "selection_sheet": None, "takeoff_sheet": None}
+    sel_doc = next((d for d in docs if d.document_type == "selection_sheet"), None)
+    to_doc = next((d for d in docs if d.document_type == "takeoff_sheet"), None)
 
-    for doc in docs:
-        if not doc.s3_path:
-            logger.warning("Document %s has no s3_path — skipping", doc.id)
-            continue
+    if not sel_doc or not to_doc:
+        raise HTTPException(
+            status_code=400,
+            detail="Both selection_sheet and takeoff_sheet documents are required.",
+        )
 
-        try:
-            file_bytes = download_file_from_s3(_s3_key_from_path(doc.s3_path))
-        except Exception as exc:
-            logger.error("Failed to download %s from S3: %s", doc.s3_path, exc)
-            continue
+    job_id = str(uuid.uuid4())
 
-        file_name = doc.file_name or "document.pdf"
+    extract_documents_task.delay(
+        job_id,
+        lot_id,
+        str(sel_doc.id),
+        str(to_doc.id),
+    )
 
-        if doc.document_type == "selection_sheet":
-            selections = extract_selection_sheet_from_bytes(
-                db, doc.id, file_bytes, file_name, lot_id
-            )
-            results["selection_sheet"] = {
-                "document_id": str(doc.id),
-                "extracted_count": len(selections),
-                "status": "extracted",
-            }
-
-        elif doc.document_type == "takeoff_sheet":
-            takeoff_rows = extract_takeoff_sheet_from_bytes(
-                db, doc.id, file_bytes, file_name, lot_id
-            )
-            results["takeoff_sheet"] = {
-                "document_id": str(doc.id),
-                "extracted_count": len(takeoff_rows),
-                "status": "extracted",
-            }
-
-    return results
+    return {
+        "lot_id": lot_id,
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Extraction queued. Poll GET /documents/{lot_id}/status for progress.",
+    }
 
 
 @router.get("/selections/{lot_id}", response_model=SelectionListResponse)

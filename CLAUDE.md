@@ -83,5 +83,36 @@ POST /documents/upload
 - `app/schemas/` — Pydantic v2 request/response schemas
 - `scripts/load_sap_materials.py` — one-time script to ingest Materials.xlsx into PostgreSQL + Pinecone
 
+### Docker Compose Services
+Four services: `api` (FastAPI on port 8000), `celery_worker` (concurrency=4), `postgres` (PostgreSQL 16, port 5432), `redis` (Redis 7, port 6379). All share `.env` from project root.
+
+### Integration Patterns
+
+**LLM calls** always use LiteLLM:
+```python
+response = litellm.completion(
+    model=CLAUDE_MODEL,
+    messages=[{"role": "user", "content": prompt}],
+    temperature=0, max_tokens=512,
+)
+```
+JSON responses are cleaned with `.strip().removeprefix("```json").removesuffix("```")` before parsing.
+
+**Embeddings** bypass LiteLLM — direct boto3 calls to Bedrock Titan Embed v2 (1024 dimensions, normalize=True) in `embedding_service.py`.
+
+**PDF extraction** converts pages to PNG at 300 DPI via `pdf2image`, then sends images to Claude Vision through LiteLLM.
+
+### Celery Task Patterns
+- Task config: `task_serializer="json"`, `task_acks_late=True`, `prefetch_multiplier=1`
+- Pipeline orchestrator: `document_tasks.process_document_pipeline` — decorated with `@celery_app.task(bind=True, max_retries=3, default_retry_delay=30)`
+- Retry uses exponential backoff: `30 * (2 ** self.request.retries)`
+- Sub-tasks (`extraction_tasks`, `mapping_tasks`) are called as regular functions, not chained Celery tasks
+
+### Database Connection
+SQLAlchemy engine with `pool_pre_ping=True`, `pool_size=10`, `max_overflow=20`. Sessions via `SessionLocal` factory; FastAPI endpoints use `get_db()` dependency. All models inherit from `DeclarativeBase`.
+
 ### Environment
 All config loaded from `.env` at project root (one level above `backend/`). See `backend/.env.example` for all variables. Key: `AWS_*`, `PINECONE_*`, `POSTGRES_*`, `REDIS_URL`, `S3_BUCKET`, `CLAUDE_MODEL`, `BEDROCK_EMBEDDING_MODEL`.
+
+### Testing & Linting
+No test suite or linting configuration exists yet. No `pytest.ini`, `pyproject.toml`, or CI/CD pipeline. Verification is done manually via FastAPI interactive docs at `/docs`.

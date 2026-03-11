@@ -1,6 +1,6 @@
 """SQLAlchemy engine, session factory, and declarative base."""
 
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.config import DATABASE_URL
@@ -10,7 +10,7 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(schema="sentra")
 
 
 def get_db():

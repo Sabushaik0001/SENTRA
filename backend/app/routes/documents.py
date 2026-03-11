@@ -2,17 +2,16 @@
 
 import logging
 import uuid
-from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.documents import Document
+from app.models.documents import Document, DocumentClassification
 from app.schemas.document_schema import DocumentStatusResponse, DocumentUploadResponse
 from app.services.s3_service import upload_file_to_s3
-from app.tasks.document_tasks import process_document_pipeline
+from app.tasks.pipeline_helpers import emit_audit, transition
 from app.utils.s3_paths import build_s3_key
 
 logger = logging.getLogger(__name__)
@@ -26,9 +25,11 @@ async def upload_documents(
     builder_id: str = Form(None, description="Optional builder identifier"),
     db: Session = Depends(get_db),
 ):
-    """Upload selection sheet + takeoff sheet. Triggers async processing pipeline."""
+    """
+    Upload selection sheet + takeoff sheet to S3 and register them in the DB.
+    Returns lot_id and document IDs. Call POST /extraction/{lot_id}/run to begin processing.
+    """
     lot_id = f"LOT-{uuid.uuid4().hex[:8].upper()}"
-    job_id = uuid.uuid4()
 
     # Upload selection sheet to S3
     sel_bytes = await selection_sheet.read()
@@ -65,18 +66,41 @@ async def upload_documents(
     db.refresh(sel_doc)
     db.refresh(to_doc)
 
-    # Dispatch Celery pipeline
-    process_document_pipeline.delay(
-        str(job_id), lot_id, str(sel_doc.id), str(to_doc.id), builder_id
-    )
+    upload_job_id = str(uuid.uuid4())
+
+    emit_audit(db, upload_job_id, "document_uploaded", {
+        "lot_id": lot_id,
+        "builder_id": builder_id,
+        "selection_doc_id": str(sel_doc.id),
+        "selection_file": selection_sheet.filename,
+        "takeoff_doc_id": str(to_doc.id),
+        "takeoff_file": takeoff_sheet.filename,
+    })
+
+    # Classify both documents immediately (synchronous — no LLM, just metadata-based)
+    for doc in (sel_doc, to_doc):
+        transition(db, doc.id, "classifying", upload_job_id, {"lot_id": lot_id})
+        db.add(DocumentClassification(
+            document_id=doc.id,
+            document_type=doc.document_type,
+            builder_id=doc.builder_id,
+            format="standard",
+            confidence_score=1.0,
+        ))
+        db.flush()
+        transition(db, doc.id, "classified", upload_job_id, {
+            "lot_id": lot_id,
+            "document_type": doc.document_type,
+        })
 
     return DocumentUploadResponse(
-        job_id=job_id,
         lot_id=lot_id,
-        status="queued",
+        status="classified",
+        selection_doc_id=sel_doc.id,
+        takeoff_doc_id=to_doc.id,
         selection_sheet_s3=sel_s3_path,
         takeoff_sheet_s3=to_s3_path,
-        message="Processing started. Poll GET /documents/{lot_id}/status for progress.",
+        message="Files uploaded and classified. Call POST /extraction/{lot_id}/run to extract.",
     )
 
 
