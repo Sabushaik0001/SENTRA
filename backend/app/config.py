@@ -25,6 +25,13 @@ BEDROCK_EMBEDDING_MODEL: str = os.getenv(
 )
 EMBED_DIMENSIONS: int = int(os.getenv("EMBED_DIMENSIONS", "1024"))
 
+# ── LiteLLM Settings ─────────────────────────────────────────────────────────
+LITELLM_MAX_RETRIES: int = int(os.getenv("LITELLM_MAX_RETRIES", "3"))
+LITELLM_TIMEOUT: int = int(os.getenv("LITELLM_TIMEOUT", "600"))  # 10 minutes
+LITELLM_FALLBACK_MODELS: list = [
+    "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",  # Claude Sonnet 4 fallback
+]
+
 # ── Pinecone ─────────────────────────────────────────────────────────────────
 PINECONE_API_KEY: str = os.getenv("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME: str = os.getenv("PINECONE_INDEX_NAME", "sap-materials")

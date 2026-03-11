@@ -23,6 +23,7 @@ from pdf2image import convert_from_bytes
 from sqlalchemy.orm import Session
 
 from app.config import CLAUDE_MODEL
+from app.config import LITELLM_MAX_RETRIES, LITELLM_TIMEOUT
 from app.models.documents import Document
 from app.models.selections import Selection
 from app.models.takeoff import TakeoffData
@@ -376,6 +377,8 @@ def _extract_page_with_vision(
         messages=messages,
         temperature=0,
         max_tokens=8192,
+        num_retries=LITELLM_MAX_RETRIES,
+        timeout=LITELLM_TIMEOUT,
     )
 
     raw = response.choices[0].message.content or "{}"

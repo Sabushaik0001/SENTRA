@@ -3,6 +3,8 @@
 import logging
 import uuid
 import time
+import io
+import PyPDF2
 
 
 from app.database import SessionLocal
@@ -96,8 +98,59 @@ def run_extraction(job_id: str, lot_id: str, selection_doc_id: str, takeoff_doc_
             )
             sel_bytes = download_file_from_s3(_s3_key_from_path(sel_doc.s3_path))
 
+            try:
+                classification_start = time.perf_counter()
+                # Log classification started
+                log_audit_event(
+                    db=db,
+                    job_id=uuid.UUID(job_id),
+                    event_type="classification_started",
+                    metadata={
+                        "document_id": str(sel_doc.id),
+                        "document_type": "selection_sheet",
+                        "lot_id": lot_id,
+                        "builder_id": sel_doc.builder_id,
+                    }
+                )
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(sel_bytes))
+                text_sample = ""
+                for page_num in range(min(3, len(pdf_reader.pages))):
+                    text_sample += pdf_reader.pages[page_num].extract_text()
+                
+                classify_document(db, sel_doc.id, text_sample[:3000])
+                classification_duration = int((time.perf_counter() - classification_start) * 1000)
+                
+                # Log classification completed
+                log_audit_event(
+                    db=db,
+                    job_id=uuid.UUID(job_id),
+                    event_type="classification_completed",
+                    duration_ms=classification_duration,
+                    metadata={
+                        "document_id": str(sel_doc.id),
+                        "document_type": "selection_sheet",
+                        "lot_id": lot_id,
+                        "builder_id": sel_doc.builder_id,
+                    }
+                )
+            except Exception as exc:
+                logger.error("Classification failed for document %s: %s", sel_doc.id, exc)
+                log_audit_event(
+                    db=db,
+                    job_id=uuid.UUID(job_id),
+                    event_type="classification_failed",
+                    metadata={
+                        "document_id": str(sel_doc.id),
+                        "document_type": "selection_sheet",
+                        "lot_id": lot_id,
+                        "builder_id": sel_doc.builder_id,
+                        "error": str(exc),
+                    }
+                )
+                raise
+
             # Classify using upload metadata (document_type is already known)
-            _classify_from_filename(db, sel_doc, job_id)
+            # _classify_from_filename(db, sel_doc, job_id)
 
             # Extract using Vision (sends raw PDF bytes to Claude)
             extract_selection_sheet_from_bytes(
@@ -139,7 +192,59 @@ def run_extraction(job_id: str, lot_id: str, selection_doc_id: str, takeoff_doc_
             )
             to_bytes = download_file_from_s3(_s3_key_from_path(to_doc.s3_path))
 
-            _classify_from_filename(db, to_doc, job_id)
+            # Classify using Claude
+            try:
+                classification_start = time.perf_counter()
+                # Log classification started
+                log_audit_event(
+                    db=db,
+                    job_id=uuid.UUID(job_id),
+                    event_type="classification_started",
+                    metadata={
+                        "document_id": str(to_doc.id),
+                        "document_type": "takeoff_sheet",
+                        "lot_id": lot_id,
+                        "builder_id": to_doc.builder_id,
+                    }
+                )
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(to_bytes))
+                text_sample = ""
+                for page_num in range(min(3, len(pdf_reader.pages))):
+                    text_sample += pdf_reader.pages[page_num].extract_text()
+                
+                classify_document(db, to_doc.id, text_sample[:3000])
+                classification_duration = int((time.perf_counter() - classification_start) * 1000)
+                
+                # Log classification completed
+                log_audit_event(
+                    db=db,
+                    job_id=uuid.UUID(job_id),
+                    event_type="classification_completed",
+                    duration_ms=classification_duration,
+                    metadata={
+                        "document_id": str(to_doc.id),
+                        "document_type": "takeoff_sheet",
+                        "lot_id": lot_id,
+                        "builder_id": to_doc.builder_id,
+                    }
+                )
+            except Exception as exc:
+                logger.error("Classification failed for document %s: %s", to_doc.id, exc)
+                log_audit_event(
+                    db=db,
+                    job_id=uuid.UUID(job_id),
+                    event_type="classification_failed",
+                    metadata={
+                        "document_id": str(to_doc.id),
+                        "document_type": "takeoff_sheet",
+                        "lot_id": lot_id,
+                        "builder_id": to_doc.builder_id,
+                        "error": str(exc),
+                    }
+                )
+                raise
+
+            # _classify_from_filename(db, to_doc, job_id)
 
             extract_takeoff_sheet_from_bytes(
                 db, to_doc.id, to_bytes, to_doc.file_name or "takeoff.pdf", lot_id,

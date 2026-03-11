@@ -36,3 +36,6 @@ pandas==2.2.3
 
 # Logging
 python-json-logger==3.2.1
+
+# PDF text extraction for classification
+PyPDF2==3.0.1
